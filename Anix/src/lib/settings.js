@@ -25,7 +25,7 @@ const path = require('path');
  * Isolation lives here: session A can never read or write session B's file,
  * because each gets its own JSONStore instance pointed at its own path.
  */
-function createSessionSettings(sessionId, defaultPrefix) {
+function createSessionSettings(sessionId, defaultPrefix, defaultMenuImage) {
     // Lives inside the session folder on purpose: whoever keeps `session/` when updating the panel keeps
     // every user's customisation (sudo, bans, antilink, bot name...) together with their WhatsApp login.
     const dir = path.join(process.cwd(), 'session', sessionId);
@@ -39,7 +39,7 @@ function createSessionSettings(sessionId, defaultPrefix) {
     let data = {
         public: true,
         prefix: defaultPrefix,
-        menuImage: "https://files.catbox.moe/qnwoj0.png",
+        menuImage: defaultMenuImage,
         fontStyle: null,
         autoStatusView: true,
         autoStatusLike: true,
@@ -66,6 +66,16 @@ function createSessionSettings(sessionId, defaultPrefix) {
         try {
             if (fs.existsSync(file)) data = { ...data, ...JSON.parse(fs.readFileSync(file, 'utf8')) };
             else save();
+            if ([
+                'https://files.catbox.moe/qnwoj0.png',
+                'https://files.catbox.moe/wkhivr.jpg',
+                'https://img.sanishtech.com/u/e5d99334a3fa198d75d3eba3a397db70.webp',
+                'https://res.cloudinary.com/dtz0urit6/image/upload/q_auto:best,f_jpg/cloudinary-tools-uploads/nowx4vxej0euflmbzmmu',
+                'https://res.cloudinary.com/dtz0urit6/image/upload/q_auto:best,f_jpg/cloudinary-tools-uploads/pagptfmbvt9mrwc3pgkv',
+            ].includes(data.menuImage)) {
+                data.menuImage = defaultMenuImage;
+                save();
+            }
         } catch (err) {
             console.error(`[settings:${sessionId}] failed to load:`, err.message);
         }

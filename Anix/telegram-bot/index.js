@@ -1,5 +1,6 @@
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
 const fs = require('fs');
+const path = require('path');
 const { Telegraf } = require('telegraf');
 const store = require('./store');
 const { startSession, removeSession, isPaired, isRunning, isConnected, listSavedSessionIds, sendToSelf } = require('../src/session');
@@ -8,15 +9,17 @@ const gate = require('./gate');
 const { createDoc, notice, sendDoc, editDoc, cb, link, copy, kb, esc, tg } = require('./ui');
 
 const BOT_TOKEN = process.env.BOT_TOKEN;
-const OWNER_TELEGRAM_ID = Number(process.env.OWNER_TELEGRAM_ID);
-const START_IMAGE_URL = process.env.START_IMAGE_URL || '';
-// 'inline' (default): the image is part of the one rich menu message.  'photo': sent as a separate full-size photo above it.
-const START_IMAGE_MODE = (process.env.START_IMAGE_MODE || 'inline').toLowerCase();
+const ownerTelegramId = process.env.OWNER_TELEGRAM_ID?.trim();
+const OWNER_TELEGRAM_ID = ownerTelegramId && /^\d+$/.test(ownerTelegramId) ? Number(ownerTelegramId) : 0;
+const MENU_VIDEO_PATH = path.join(__dirname, '..', 'assets', 'menu.mp4');
 const CHANNEL_URL = process.env.CHANNEL_URL || 'https://whatsapp.com/channel/0029VaogSY74IBhJWe8b472H';
 const GROUP_URL = process.env.GROUP_URL || 'https://chat.whatsapp.com/IroGAENwtIULiuFI5TBDUV';
 
-if (!BOT_TOKEN) {
-    console.error('[telegram] Missing BOT_TOKEN in .env');
+if (!BOT_TOKEN || !Number.isSafeInteger(OWNER_TELEGRAM_ID) || OWNER_TELEGRAM_ID <= 0) {
+    const missing = [];
+    if (!BOT_TOKEN) missing.push('BOT_TOKEN');
+    if (!Number.isSafeInteger(OWNER_TELEGRAM_ID) || OWNER_TELEGRAM_ID <= 0) missing.push('OWNER_TELEGRAM_ID');
+    console.error(`[telegram] Missing or invalid ${missing.join(' and ')} in .env. Copy .env.example to .env and fill in the required values.`);
     process.exit(1);
 }
 
@@ -48,19 +51,8 @@ function uptimeString() {
 /** Reply to a COMMAND: the message is streamed ("Loading..." then typed out) before the final send. */
 const reply = (ctx, doc, keyboard) => sendDoc(ctx.telegram, ctx.chat.id, doc, { keyboard, stream: true });
 
-/** The start image is sent as a normal photo (full size), then the rich menu follows below it. */
-async function sendStartPhoto(ctx) {
-    if (!START_IMAGE_URL) return;
-    try {
-        const src = /^https?:\/\//i.test(START_IMAGE_URL) ? START_IMAGE_URL : fs.existsSync(START_IMAGE_URL) ? { source: fs.createReadStream(START_IMAGE_URL) } : null;
-        if (src) await ctx.telegram.sendPhoto(ctx.chat.id, src);
-    } catch (err) {
-        console.warn('[telegram] start image failed:', err.message);
-    }
-}
-
 /** Button press: edit the message in place. Command (or message that can't be edited): stream a new one. */
-async function show(ctx, doc, keyboard, { photo } = {}) {
+async function show(ctx, doc, keyboard) {
     const msg = ctx.callbackQuery?.message;
     if (msg) {
         try {
@@ -71,7 +63,6 @@ async function show(ctx, doc, keyboard, { photo } = {}) {
         }
         return sendDoc(ctx.telegram, ctx.chat.id, doc, { keyboard });
     }
-    if (photo) await sendStartPhoto(ctx);
     return reply(ctx, doc, keyboard);
 }
 
@@ -164,14 +155,13 @@ function menuDoc() {
     const sessions = Object.values(store.allSessions());
     const online = sessions.filter((s) => s.connected).length;
     const d = createDoc();
-    if (START_IMAGE_URL && START_IMAGE_MODE !== 'photo' && /^https?:\/\//i.test(START_IMAGE_URL)) d.image(START_IMAGE_URL);
     d.heading(`${tg('🤖')} ${esc(config.botName)}`, 2);
     d.p('<i>WhatsApp bot control panel</i>');
     d.table(
         null,
         [
             ['Bot Name', config.botName],
-            ['Dev', 'jamesmodz'],
+            ['Dev', config.devName],
             ['Owner', 'James'],
             ['Sessions', `${sessions.length} (${online} online)`],
             ['Uptime', uptimeString()],
@@ -195,7 +185,29 @@ const menuKeyboard = () =>
         [cb('➕ Pair New', 'pair_new', 'primary'), cb('📋 My Sessions', 'my_sessions', 'primary')],
     ]);
 
-const sendMenu = (ctx) => show(ctx, menuDoc(), menuKeyboard(), { photo: START_IMAGE_MODE === 'photo' });
+const sendMenu = async (ctx) => {
+    const doc = menuDoc();
+    const caption = doc.build().legacy;
+    const oldMessage = ctx.callbackQuery?.message;
+    try {
+        const sent = await ctx.telegram.sendVideo(
+            ctx.chat.id,
+            { source: fs.createReadStream(MENU_VIDEO_PATH) },
+            { caption, parse_mode: 'HTML', supports_streaming: true, reply_markup: menuKeyboard() }
+        );
+        if (oldMessage) {
+            try {
+                await ctx.telegram.deleteMessage(oldMessage.chat.id, oldMessage.message_id);
+            } catch (err) {
+                console.warn('[telegram] previous menu message could not be replaced:', err.message);
+            }
+        }
+        return sent;
+    } catch (err) {
+        console.error('[telegram] menu video failed:', err.message);
+        return show(ctx, doc, menuKeyboard());
+    }
+};
 
 bot.start(sendMenu);
 bot.command(['menu', 'help'], sendMenu);
@@ -821,6 +833,17 @@ bot.telegram
         { command: 'reportissue', description: 'Report a problem to the admin' },
     ])
     .catch(() => {});
+
+bot.telegram
+    .getMe()
+    .then((me) => {
+        if (me.first_name !== config.botName) {
+            return bot.telegram.setMyName(config.botName).catch((err) => {
+                console.error('[telegram] failed to set bot display name:', err.message);
+            });
+        }
+    })
+    .catch((err) => console.error('[telegram] failed to read bot profile:', err.message));
 
 restoreSessions().catch((err) => console.error('[telegram] restore failed:', err));
 

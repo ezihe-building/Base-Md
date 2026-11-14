@@ -29,16 +29,20 @@ const { jidToNumber } = require('./lib/utils');
 const { numOf, digits, senderNums, isSudo, isBanned, ownNums, ownerNums, botName, resolveTarget, isGroupAdmin, botIsAdmin } = require('./lib/access');
 const { checkAntilink, checkEditedLink, getCfg: antilinkCfg, setCfg: setAntilinkCfg, getWarns, setWarns } = require('./lib/antilink');
 const { GROUP_CMDS, runGroupCommand, trackPresence } = require('./commands/group');
+const { runExtraCommand, restoreReminders } = require('./commands/extras');
 const { handleParticipants } = require('./lib/welcome');
 const { sendCopy } = require('./lib/buttons');
 const { rememberMessage, handleRevoke } = require('./lib/antidelete');
 const { chatReply, allowed: chatAllowed } = require('./lib/chatbot');
 const { simulatePresence, startAlwaysOnline } = require('./lib/presence');
 const { apiGet, uploadToCatbox } = require('./lib/api');
+const { getStickerSetName, downloadStickersFromSet, convertStickerToWebp } = require('./lib/telegram-sticker');
 const log = require('./lib/logger');
 const { handleStatus } = require('./lib/status');
 const { followChannel, handleChannelPost } = require('./lib/channel');
 const { postGroupStatus } = require('./lib/groupstatus');
+
+const MENU_VIDEO_PATH = path.join(__dirname, '..', 'assets', 'menu.mp4');
 
 // ──────────────── EDIT HERE ────────────────
 // Your WhatsApp channel. Put the channel LINK (https://whatsapp.com/channel/XXXX) or, if you know it,
@@ -55,19 +59,19 @@ const SUPPORT_URL = 'https://chat.whatsapp.com/IroGAENwtIULiusjk5TBDUV';
 // Commands grouped by category, purely for the .menu screen — the switch
 // below is the actual source of truth for what runs.
 const MENU_GROUPS = [
-    { title: 'GENERAL', items: ['menu', 'ping', 'alive', 'owner', 'getdp', 'rvo', 'vv'] },
+    { title: 'GENERAL', items: ['menu', 'ping', 'alive', 'owner', 'getdp', 'getpfp', 'rvo', 'vv', 'vv2', 'tgsticker', 'sticker', 'jid'] },
     {
         title: 'CUSTOMIZE',
         items: ['settings', 'setbotname', 'setprefix', 'setmenuimg', 'setfonts', 'mode', 'resetsettings'],
     },
     { title: 'PROTECTION', items: ['antilink', 'antidelete', 'anticall'] },
     { title: 'ACCESS', items: ['addsudo', 'delsudo', 'listsudo', 'ban', 'unban', 'listbanned', 'checkban', 'block', 'unblock', 'listblocked'] },
-    { title: 'AUTOMATION', items: ['autoreply', 'autotype', 'autorecord', 'autorecordtype', 'alwaysonline', 'autostatusview', 'autostatuslike', 'statusemoji', 'autoreactch'] },
-    { title: 'OWNER', items: ['public', 'self', 'setdp'] },
-    { title: 'GROUP', items: ['kick', 'promote', 'demote', 'add', 'open', 'close', 'all', 'tagonline', 'tagoffline', 'approveall', 'listpending', 'rejectall', 'setgcname', 'setdesc', 'setgcpp', 'getppgc', 'link', 'resetlink', 'hidetag', 'admins', 'gcinfo', 'idgc', 'lock', 'unlock', 'disappear', 'joinapproval', 'welcome', 'goodbye', 'togcstatus', 'leave'] },
-    { title: 'DOWNLOADS', items: ['play', 'webzip', 'pindl', 'tourl'] },
-    { title: 'AI & EDIT', items: ['ai', 'upscale', 'toanime', 'editimg', 'fixerror'] },
-    { title: 'LOOKUP', items: ['ppwa', 'pin', 'spotify', 'igstalk', 'idch'] },
+    { title: 'AUTOMATION', items: ['autoreply', 'autotype', 'autorecord', 'autorecordtype', 'alwaysonline', 'autostatusview', 'autostatuslike', 'statusemoji', 'autoreactch', 'remind', 'reminders', 'cancelreminder', 'goodnight', 'goodmorning'] },
+    { title: 'OWNER', items: ['public', 'self', 'setdp', 'checkdevice'] },
+    { title: 'GROUP', items: ['kick', 'promote', 'demote', 'add', 'open', 'close', 'all', 'tagonline', 'tagoffline', 'approveall', 'listpending', 'rejectall', 'setgcname', 'setdesc', 'setgcpp', 'getppgc', 'link', 'resetlink', 'hidetag', 'admins', 'gcinfo', 'idgc', 'lock', 'unlock', 'disappear', 'joinapproval', 'welcome', 'goodbye', 'togcstatus', 'leave', 'poll'] },
+    { title: 'DOWNLOADS & LOOKUP', items: ['play', 'webzip', 'pindl', 'tourl', 'ppwa', 'pin', 'spotify', 'igstalk', 'idch'] },
+    { title: 'AI & EDIT', items: ['ai', 'ask', 'upscale', 'toanime', 'editimg', 'fixerror'] },
+    { title: 'TOOLS & FUN', items: ['calc', 'roll', 'dice', 'coinflip', 'flip', 'choose', '8ball', 'magic8ball', 'rps', 'reverse', 'count', 'upper', 'lower', 'base64', 'hash', 'uuid', 'timestamp', 'chatid', 'weather', 'translate', 'qr', 'qrcode', 'joke', 'fact', 'quote', 'truth', 'dare', 'ship', 'rate', 'guess', 'trivia', 'answer'] },
 ];
 
 function buildMenuText(session, { withCommands = true } = {}) {
@@ -83,7 +87,7 @@ function buildMenuText(session, { withCommands = true } = {}) {
     const lines = [];
     lines.push('┌─( *Bot Information');
     lines.push('│友 Bot Name ‹ ' + botName(settings, config));
-    lines.push('│友 Dev ‹ jamesmodz');
+    lines.push('│友 Dev ‹ ' + config.devName);
     lines.push('│友 version ‹ last');
     lines.push('│友 Owner ‹ wa.me/' + ownerNum);
     lines.push('│友 Prefix ‹ ' + (prefix || 'none'));
@@ -109,20 +113,33 @@ function buildMenuText(session, { withCommands = true } = {}) {
 
 async function sendMenu(m, session) {
     const { settings } = session;
-    // Commands live ONLY in the select button; the message body is just the info header.
     const caption = buildMenuText(session, { withCommands: false });
-    const fullText = buildMenuText(session); // plain-text fallback if the rich menu can't send
-    const menuImage = settings.get('menuImage');
+    const fullText = buildMenuText(session);
     const owners = settings.get('owners', []);
     const prefix = settings.get('prefix', config.prefix);
     const ownerNum = owners[0] ? jidToNumber(owners[0]) : '';
+    const storedMenuImage = settings.get('menuImage', DEFAULT_MENU_IMAGE);
+    const useCustomImage = !!storedMenuImage && !DEFAULT_MENU_IMAGES.includes(storedMenuImage);
+
+    let menuVideo = null;
+    if (!useCustomImage) {
+        try {
+            menuVideo = fs.readFileSync(MENU_VIDEO_PATH);
+        } catch (err) {
+            log.error('menu', `could not read menu video at ${MENU_VIDEO_PATH}: ${err.message}`);
+        }
+    }
+
+    const menuImage = useCustomImage ? currentMenuImage(settings) : MENU_IMAGE_FALLBACK;
+    const primaryMedia = useCustomImage
+        ? { image: menuImagePayload(menuImage) }
+        : menuVideo ? { video: menuVideo } : { image: { url: MENU_IMAGE_FALLBACK } };
+    const fallbackMedia = useCustomImage
+        ? (menuVideo ? { video: menuVideo } : null)
+        : { image: { url: MENU_IMAGE_FALLBACK } };
 
     const CHANNEL_URL = CHANNEL.link;
 
-    // One list section per menu group. Each row's id is the full command
-    // string (prefix + name) — when the user taps a row, WhatsApp sends back
-    // an interactiveResponseMessage carrying that id, and serializer.js turns
-    // it into a normal text body, so it runs through the usual command pipeline.
     const sections = MENU_GROUPS.map((group) => ({
         title: group.title,
         highlight_label: String(group.items.length),
@@ -158,28 +175,44 @@ async function sendMenu(m, session) {
         });
     }
 
-    try {
-        await m.send({
-            interactiveMessage: {
-                header: botName(settings, config),
-                title: caption,
-                footer: ownerNum ? 'wa.me/' + ownerNum : botName(settings, config),
-                ...(menuImage ? { image: menuImagePayload(menuImage) } : {}),
-                nativeFlowMessage: {
-                    messageParamsJson: JSON.stringify({
-                        bottom_sheet: {
-                            in_thread_buttons_limit: 1, // only the "Commands" button shows in the chat; everything else lives inside it
-                            list_title: botName(settings, config),
-                            button_title: 'Commands',
-                        },
-                    }),
-                    buttons,
-                },
+    const menuContent = (media) => ({
+        interactiveMessage: {
+            header: botName(settings, config),
+            title: caption,
+            footer: ownerNum ? 'wa.me/' + ownerNum : botName(settings, config),
+            ...media,
+            nativeFlowMessage: {
+                messageParamsJson: JSON.stringify({
+                    bottom_sheet: {
+                        in_thread_buttons_limit: 1, // only the Commands button shows in the chat; everything else lives inside it
+                        list_title: botName(settings, config),
+                        button_title: 'Commands',
+                    },
+                }),
+                buttons,
             },
-        });
+        },
+    });
+
+    try {
+        await m.send(menuContent(primaryMedia));
     } catch (err) {
-        log.error('menu', `rich menu failed, falling back to text: ${err.message}`);
-        await m.reply(fullText);
+        log.warn('menu', `rich menu media failed; retrying with fallback media: ${err.message}`);
+        if (fallbackMedia) {
+            try {
+                await m.send(menuContent(fallbackMedia));
+                return;
+            } catch (fallbackErr) {
+                log.warn('menu', `fallback media failed; retrying without media: ${fallbackErr.message}`);
+            }
+        }
+
+        try {
+            await m.send(menuContent(null));
+        } catch (buttonsErr) {
+            log.error('menu', `rich menu failed with and without an image: ${buttonsErr.message}`);
+            await m.reply(fullText);
+        }
     }
 }
 
@@ -192,7 +225,15 @@ async function getQuotedMessage(m) {
     };
 }
 
-const DEFAULT_MENU_IMAGE = 'https://files.catbox.moe/qnwoj0.png';
+const DEFAULT_MENU_IMAGES = config.menuImages;
+const DEFAULT_MENU_IMAGE = config.menuImage;
+const MENU_IMAGE_FALLBACK = 'https://img.sanishtech.com/u/e5d99334a3fa198d75d3eba3a397db70.webp';
+const randomMenuImage = () => DEFAULT_MENU_IMAGES[Math.floor(Math.random() * DEFAULT_MENU_IMAGES.length)];
+
+function currentMenuImage(settings) {
+    const configuredImage = settings.get('menuImage');
+    return DEFAULT_MENU_IMAGES.includes(configuredImage) ? randomMenuImage() : configuredImage;
+}
 
 /** A link, or a saved file; if the file is gone the default image is used so the menu always sends. */
 function menuImagePayload(value) {
@@ -200,7 +241,7 @@ function menuImagePayload(value) {
     try {
         return fs.readFileSync(value);
     } catch {
-        return { url: DEFAULT_MENU_IMAGE };
+        return { url: MENU_IMAGE_FALLBACK };
     }
 }
 
@@ -226,6 +267,7 @@ async function handleCommand(m, { args, sock, session }) {
     if (!isPublic && !owner) return;
 
     if (GROUP_CMDS.has(cmd)) return runGroupCommand(cmd, m, { sock, settings, owner, args, P, getQuotedMessage });
+    if (await runExtraCommand(cmd, m, { args, sock, session, owner, getQuotedMessage, downloadMediaMessage })) return;
 
     switch (cmd) {
         case 'menu':
@@ -349,9 +391,10 @@ async function handleCommand(m, { args, sock, session }) {
             return m.reply('✅ Profile picture updated.');
         }
 
-        case 'getdp': {
+        case 'getdp':
+        case 'getpfp': {
             const quoted = await getQuotedMessage(m);
-            const target = quoted?.key?.participant || quoted?.key?.remoteJid || m.sender;
+            const target = resolveTarget(m, args, { allowChat: true }) || quoted?.key?.participant || m.sender;
             try {
                 const url = await sock.profilePictureUrl(target, 'image');
                 return m.send({ image: { url }, caption: `Profile picture: wa.me/${jidToNumber(target)}` });
@@ -361,7 +404,8 @@ async function handleCommand(m, { args, sock, session }) {
         }
 
         case 'rvo':
-        case 'vv': {
+        case 'vv':
+        case 'vv2': {
             const quoted = await getQuotedMessage(m);
             const viewOnce =
                 quoted?.message?.imageMessage?.viewOnce || quoted?.message?.videoMessage?.viewOnce
@@ -370,11 +414,15 @@ async function handleCommand(m, { args, sock, session }) {
             if (!viewOnce) return m.reply('Reply to a view-once message with this command.');
             const mediaType = viewOnce.imageMessage ? 'imageMessage' : 'videoMessage';
             const buffer = await downloadMediaMessage({ message: viewOnce, key: quoted.key }, 'buffer', {});
-            return m.send(
-                mediaType === 'imageMessage'
-                    ? { image: buffer, caption: viewOnce.imageMessage.caption || '' }
-                    : { video: buffer, caption: viewOnce.videoMessage.caption || '' }
-            );
+            const content = mediaType === 'imageMessage'
+                ? { image: buffer, caption: viewOnce.imageMessage.caption || '' }
+                : { video: buffer, caption: viewOnce.videoMessage.caption || '' };
+            if (cmd === 'vv2') {
+                const recipient = m.senderAlt || m.sender;
+                await sock.sendMessage(recipient, content);
+                return m.reply('✅ Sent the media to your private chat.');
+            }
+            return m.send(content);
         }
 
         case 'play': {
@@ -441,14 +489,24 @@ async function handleCommand(m, { args, sock, session }) {
             }
         }
 
-        case 'ai': {
-            const question = args.join(' ');
-            if (!question) return m.reply('Usage: ai <question>');
+        case 'ai':
+        case 'ask': {
+            const quoted = await getQuotedMessage(m);
+            const quotedText = quoted?.message?.conversation ||
+                quoted?.message?.extendedTextMessage?.text ||
+                quoted?.message?.imageMessage?.caption ||
+                quoted?.message?.videoMessage?.caption ||
+                '';
+            const question = args.join(' ').trim();
+            const prompt = quotedText
+                ? `Message to consider:\n${quotedText}\n\nQuestion: ${question || 'Explain or summarize this message.'}`
+                : question;
+            if (!prompt) return m.reply(`Usage: ${P}ask <question> (or reply to a text message)\nExample: ${P}ask explain this simply`);
             try {
                 await m.reply('🤖 Thinking...');
-                const data = await apiGet(`/ai/unliai?teks=${encodeURIComponent(question)}`);
+                const data = await apiGet(`/ai/unliai?teks=${encodeURIComponent(prompt)}`);
                 if (!data?.status || !data?.result?.response) return m.reply('Failed to get an answer.');
-                return m.reply(`🤖 *Unlimited AI*\n\n📝 *Question:*\n${data.result.query}\n\n💬 *Answer:*\n${data.result.response}`);
+                return m.reply(`🤖 *${cmd === 'ask' ? 'Ask AI' : 'Unlimited AI'}*\n\n📝 *Question:*\n${data.result.query}\n\n💬 *Answer:*\n${data.result.response}`);
             } catch (err) {
                 log.error('ai', err.message);
                 return m.reply('Error contacting the AI.');
@@ -611,6 +669,58 @@ async function handleCommand(m, { args, sock, session }) {
                 log.error('tourl', err.message);
                 return m.reply(`Upload failed: ${err.message}`);
             }
+        }
+
+        case 'tgsticker': {
+            const link = args[0];
+            const setName = getStickerSetName(link || '');
+            if (!setName) return m.reply(`Usage: ${P}tgsticker <Telegram sticker-pack link> [number to send, up to 30]\nExample: ${P}tgsticker https://t.me/addstickers/PackName 30`);
+
+            const amount = args[1] === undefined ? 1 : Number(args[1]);
+            if (!Number.isSafeInteger(amount) || amount < 1 || amount > 30) return m.reply(`Choose a number from 1 to 30. Example: ${P}tgsticker https://t.me/addstickers/PackName 30`);
+            if (!process.env.BOT_TOKEN) return m.reply('❌ Telegram sticker downloads are unavailable: the Telegram bot token is not configured.');
+
+            let sent = 0;
+            let currentIndex = 0;
+            let currentFormat = '';
+            let packCount = 0;
+            const groupMetadataCache = new Map();
+            const sendBatchMessage = (content) => m.send(content, m.isGroup ? {
+                cachedGroupMetadata: async (jid) => {
+                    if (groupMetadataCache.has(jid)) return groupMetadataCache.get(jid);
+
+                    for (let attempt = 0; ; attempt++) {
+                        try {
+                            const metadata = await m.sock.groupMetadata(jid);
+                            groupMetadataCache.set(jid, metadata);
+                            return metadata;
+                        } catch (err) {
+                            if (!/rate-overlimit|429|rate limit/i.test(err.message) || attempt >= 2) throw err;
+                            const waitMs = 5000 * 2 ** attempt;
+                            log.warn('tgsticker', `WhatsApp rate-limited group metadata; retrying in ${waitMs / 1000}s`);
+                            await new Promise((resolve) => setTimeout(resolve, waitMs));
+                        }
+                    }
+                },
+            } : {});
+            try {
+                await sendBatchMessage({ text: `⏳ Getting up to ${amount} Telegram sticker(s)...` });
+                for await (const sticker of downloadStickersFromSet(setName, amount, process.env.BOT_TOKEN)) {
+                    currentIndex = sticker.index;
+                    currentFormat = sticker.format;
+                    packCount = sticker.count;
+                    const buffer = await convertStickerToWebp(sticker.buffer, sticker.format);
+                    await sendBatchMessage({ sticker: buffer });
+                    sent++;
+                    if (sent < Math.min(amount, packCount)) await new Promise((resolve) => setTimeout(resolve, 1000));
+                }
+            } catch (err) {
+                log.warn('tgsticker', err.message);
+                if (sent) return m.reply(`⚠️ Sent ${sent} sticker(s), then failed at sticker ${currentIndex}: ${err.message}`);
+                const failedSticker = currentIndex ? ` sticker ${currentIndex}${currentFormat ? ` (${currentFormat})` : ''}` : '';
+                return m.reply(`❌ Could not send the Telegram${failedSticker}: ${err.message}`);
+            }
+            return sendBatchMessage({ text: `✅ Sent ${sent} sticker(s) from the ${packCount}-sticker pack.` });
         }
 
         // ───────────────────────── lookups ─────────────────────────
@@ -965,6 +1075,7 @@ async function handleCommand(m, { args, sock, session }) {
 /** AI auto-reply for messages that are not commands. */
 async function maybeChatbot(m, { sock, settings, sessionId, owner }) {
     if (!settings.get('autoReply', false) || m.fromMe || !m.body || m.body.length > 600) return;
+    if (settings.get('quietUntil', 0) > Date.now()) return;
     if (!settings.get('public', true) && !owner) return;
     if (!['conversation', 'extendedTextMessage'].includes(m.type)) return;
 
@@ -1076,7 +1187,10 @@ async function handleGroupUpdate(sock, update, session) {
 
 /** Runs once each time a session's connection opens. */
 async function onSessionOpen(sock, session) {
-    if (session?.settings) startAlwaysOnline(sock, session.settings);
+    if (session?.settings) {
+        startAlwaysOnline(sock, session.settings);
+        restoreReminders(sock, session);
+    }
     await followChannel(sock, CHANNEL);
 }
 

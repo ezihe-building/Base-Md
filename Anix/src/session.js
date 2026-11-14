@@ -142,12 +142,13 @@ let versionCache = { at: 0, version: undefined };
 async function waVersion() {
     if (versionCache.version && Date.now() - versionCache.at < 6 * 3600 * 1000) return versionCache.version;
     try {
-        const version = await waVersion();
-        versionCache = { at: Date.now(), version };
+        const { version } = await fetchLatestBaileysVersion();
+        if (version) versionCache = { at: Date.now(), version };
+        return version;
     } catch (err) {
         log.warn('session', `could not fetch WhatsApp version (${err.message}) - using ${versionCache.version ? 'cached' : 'built-in'} version`);
+        return versionCache.version;
     }
-    return versionCache.version;
 }
 
 function fire(tag, fn, ...args) {
@@ -190,10 +191,10 @@ async function startSession(sessionId, opts = {}) {
     }
 
     const { state, saveCreds } = await useMultiFileAuthState(authDir(sessionId));
-    const { version } = await fetchLatestBaileysVersion();
+    const version = await waVersion();
     if (generations.get(sessionId) !== gen) return null; // removed while we were awaiting
 
-    const settings = createSessionSettings(sessionId, config.prefix);
+    const settings = createSessionSettings(sessionId, config.prefix, config.menuImage);
     // a session restored from disk was connected before: never re-announce "connected successfully"
     if (restored && !settings.get('notifiedConnected')) settings.set('notifiedConnected', true);
 

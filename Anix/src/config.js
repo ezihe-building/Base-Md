@@ -19,11 +19,27 @@
 */
 require('dotenv').config();
 
+const defaultMenuImages = [
+    'https://img.sanishtech.com/u/e5d99334a3fa198d75d3eba3a397db70.webp',
+];
+const unavailableMenuImages = new Set([
+    'https://res.cloudinary.com/dtz0urit6/image/upload/q_auto:best,f_jpg/cloudinary-tools-uploads/nowx4vxej0euflmbzmmu',
+    'https://res.cloudinary.com/dtz0urit6/image/upload/q_auto:best,f_jpg/cloudinary-tools-uploads/pagptfmbvt9mrwc3pgkv',
+]);
+const configuredMenuImages = process.env.MENU_IMAGES || process.env.START_IMAGE_URL;
+const parsedMenuImages = configuredMenuImages
+    ? configuredMenuImages.split('|').map((url) => url.trim()).filter((url) => url && !unavailableMenuImages.has(url))
+    : defaultMenuImages;
+const menuImages = parsedMenuImages.length ? parsedMenuImages : defaultMenuImages;
+
 // NOTE: owners are no longer read from here — each session (paired number)
 // tracks its own owner list in its own settings.json (see lib/settings.js).
 // This file only holds bot-wide defaults that every new session starts with.
 module.exports = {
-    botName: process.env.BOT_NAME || 'Anime Md',
+    botName: process.env.BOT_NAME || 'RICHY MD',
+    devName: process.env.DEV_NAME || 'Ezihe',
+    menuImages,
+    menuImage: menuImages[0] || defaultMenuImages[0],
     prefix: process.env.PREFIX || '.',
     pairingNumber: process.env.PAIRING_NUMBER || '', // used only by standalone single-session mode
     customPairingCode: process.env.CUSTOM_PAIRING_CODE || '',

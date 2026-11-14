@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 /*
 ╔══════════════════════════╗
 ║             𓆩 BASE TELE X WA 𓆪   
@@ -18,7 +19,6 @@
 ╚════════════════════════╝
 */
 
-#!/usr/bin/env node
 /**
  * vf.js - READ-ONLY Baileys monitor. It never edits package.json, never runs npm and never touches
  * node_modules. The source files do not need it (they read package.json themselves) - it is optional.
