@@ -118,8 +118,7 @@ async function sendMenu(m, session) {
     const owners = settings.get('owners', []);
     const prefix = settings.get('prefix', config.prefix);
     const ownerNum = owners[0] ? jidToNumber(owners[0]) : '';
-    const storedMenuImage = settings.get('menuImage', DEFAULT_MENU_IMAGE);
-    const useCustomImage = !!storedMenuImage && !DEFAULT_MENU_IMAGES.includes(storedMenuImage);
+    const useCustomImage = settings.get('menuMedia', 'video') === 'image';
 
     let menuVideo = null;
     if (!useCustomImage) {
@@ -316,10 +315,12 @@ async function handleCommand(m, { args, sock, session }) {
             const first = (args[0] || '').trim();
             if (/^(reset|default)$/i.test(first)) {
                 settings.set('menuImage', DEFAULT_MENU_IMAGE);
-                return m.reply('✅ Menu image reset to the default.');
+                settings.set('menuMedia', 'video');
+                return m.reply('✅ Menu reset to the bundled video.');
             }
             if (/^https?:\/\//i.test(first)) {
                 settings.set('menuImage', first);
+                settings.set('menuMedia', 'image');
                 return m.reply('✅ Menu image set from the link. Send *' + P + 'menu* to see it.');
             }
             try {
@@ -333,6 +334,7 @@ async function handleCommand(m, { args, sock, session }) {
                 const dest = path.join(dir, 'menu-image.jpg');
                 fs.writeFileSync(dest, buffer);
                 settings.set('menuImage', dest);
+                settings.set('menuMedia', 'image');
                 return m.reply(`✅ Menu image updated. Send *${P}menu* to see it.`);
             } catch (err) {
                 log.error('setmenuimg', err.stack || err.message);

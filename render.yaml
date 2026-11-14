@@ -6,7 +6,7 @@ services:
     region: oregon
     dockerfilePath: ./Dockerfile
     dockerContext: .
-    autoDeploy: false
+    autoDeploy: true
     disk:
       name: whatsapp-session-data
       mountPath: /app/session

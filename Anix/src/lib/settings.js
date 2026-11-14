@@ -40,6 +40,7 @@ function createSessionSettings(sessionId, defaultPrefix, defaultMenuImage) {
         public: true,
         prefix: defaultPrefix,
         menuImage: defaultMenuImage,
+        menuMedia: 'video',
         fontStyle: null,
         autoStatusView: true,
         autoStatusLike: true,
@@ -64,8 +65,15 @@ function createSessionSettings(sessionId, defaultPrefix, defaultMenuImage) {
 
     function load() {
         try {
-            if (fs.existsSync(file)) data = { ...data, ...JSON.parse(fs.readFileSync(file, 'utf8')) };
-            else save();
+            let migrated = false;
+            if (fs.existsSync(file)) {
+                const stored = JSON.parse(fs.readFileSync(file, 'utf8'));
+                data = { ...data, ...stored };
+                if (!Object.prototype.hasOwnProperty.call(stored, 'menuMedia')) {
+                    data.menuMedia = 'video';
+                    migrated = true;
+                }
+            } else save();
             if ([
                 'https://files.catbox.moe/qnwoj0.png',
                 'https://files.catbox.moe/wkhivr.jpg',
@@ -74,8 +82,9 @@ function createSessionSettings(sessionId, defaultPrefix, defaultMenuImage) {
                 'https://res.cloudinary.com/dtz0urit6/image/upload/q_auto:best,f_jpg/cloudinary-tools-uploads/pagptfmbvt9mrwc3pgkv',
             ].includes(data.menuImage)) {
                 data.menuImage = defaultMenuImage;
-                save();
+                migrated = true;
             }
+            if (migrated) save();
         } catch (err) {
             console.error(`[settings:${sessionId}] failed to load:`, err.message);
         }

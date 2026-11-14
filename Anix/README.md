@@ -39,11 +39,11 @@ For the standalone WhatsApp pairing flow, run `npm run dev` and follow the termi
 
 The repository includes a Render Blueprint (`render.yaml`) and a Dockerfile. The service is configured as a paid, always-on background worker with 1 CPU, 2 GB RAM, and a 1 GB persistent disk mounted at `/app/session`; this disk keeps WhatsApp logins, per-session settings, and Telegram panel data across restarts. The free Render plan does not provide the persistent disk this bot needs. Render outages are still possible, so this is not an absolute uptime guarantee. Render shows the current charges before you apply the Blueprint.
 
-1. Push the repository to GitHub, then in Render choose **New + → Blueprint** and connect this repository. Render will read `render.yaml` from the repository root.
+1. In Render choose **New + → Blueprint** and connect this GitHub repository. Render will read `render.yaml` from the repository root.
 2. Provide `BOT_TOKEN` (from [@BotFather](https://t.me/BotFather)) and `OWNER_TELEGRAM_ID` (your numeric Telegram user ID) when prompted. Keep both values private; do not commit `.env`.
 3. Review the paid worker and persistent disk, then apply the Blueprint. The Docker image includes Chromium for animated Telegram-sticker conversion.
 4. Wait for the worker logs to show the Telegram bot has started, then open the bot and send `/start`. Use `/pair <phone number>` to link WhatsApp.
 5. The Render disk starts empty; existing WhatsApp sessions on another machine are not included in the GitHub repo and must be paired again (or securely migrated to the disk).
-6. Automatic deploys are disabled in the Blueprint to avoid an unexpected restart. To deploy later code changes, open the Render service and choose **Manual Deploy → Deploy latest commit**.
+6. Automatic deploys are enabled: later pushes to `main` deploy automatically. To trigger a deploy manually, open the Render service and choose **Manual Deploy → Deploy latest commit**.
 
-The video and application code are included in the repository; credentials and session files are not.
+The video and application code are included in the repository; credentials and session files are not. Existing WhatsApp sessions with an older saved menu image setting migrate to the video on first startup; `.setmenuimg` can still enable a custom photo, and `.setmenuimg reset` switches back to the video.
