@@ -37,13 +37,13 @@ For the standalone WhatsApp pairing flow, run `npm run dev` and follow the termi
 
 ## Deploy on Render
 
-The repository includes a Render Blueprint (`render.yaml`) and a Dockerfile. The service is configured as a paid, always-on background worker with 1 CPU, 2 GB RAM, and a 1 GB persistent disk mounted at `/app/session`; this disk keeps WhatsApp logins, per-session settings, and Telegram panel data across restarts. The free Render plan does not provide the persistent disk this bot needs. Render outages are still possible, so this is not an absolute uptime guarantee. Render shows the current charges before you apply the Blueprint.
+The repository includes a Render Blueprint (`render.yaml`) and a Dockerfile. The Blueprint uses a free web service with an HTTP health endpoint at `/health`, allowing it to run on Render's Free plan. This is a limited, best-effort setup—not a 24/7 service: Render may spin it down after 15 minutes without inbound traffic, and its filesystem is ephemeral. WhatsApp login files, per-session settings, and Telegram panel data can be lost when the service restarts or spins down, in which case you must pair the WhatsApp number again. Use persistent storage and an always-on paid service if you need reliable sessions and continuous availability.
 
 1. In Render choose **New + → Blueprint** and connect this GitHub repository. Render will read `render.yaml` from the repository root.
 2. Provide `BOT_TOKEN` (from [@BotFather](https://t.me/BotFather)) and `OWNER_TELEGRAM_ID` (your numeric Telegram user ID) when prompted. Keep both values private; do not commit `.env`.
-3. Review the paid worker and persistent disk, then apply the Blueprint. The Docker image includes Chromium for animated Telegram-sticker conversion.
-4. Wait for the worker logs to show the Telegram bot has started, then open the bot and send `/start`. Use `/pair <phone number>` to link WhatsApp.
-5. The Render disk starts empty; existing WhatsApp sessions on another machine are not included in the GitHub repo and must be paired again (or securely migrated to the disk).
+3. Review the Free web service, then apply the Blueprint. The Docker image includes Chromium for animated Telegram-sticker conversion.
+4. Wait for the deploy to become live. Open the service URL followed by `/health`; it should return `ok`. Then open the Telegram bot and send `/start`. Use `/pair <phone number>` to link WhatsApp.
+5. Existing WhatsApp sessions on another machine are not included in the GitHub repo and must be paired again.
 6. Automatic deploys are enabled: later pushes to `main` deploy automatically. To trigger a deploy manually, open the Render service and choose **Manual Deploy → Deploy latest commit**.
 
 The video and application code are included in the repository; credentials and session files are not. Existing WhatsApp sessions with an older saved menu image setting migrate to the video on first startup; `.setmenuimg` can still enable a custom photo, and `.setmenuimg reset` switches back to the video.

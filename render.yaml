@@ -1,16 +1,13 @@
 services:
-  - type: worker
+  - type: web
     name: base-tele-x-wa
     runtime: docker
-    plan: 1c-2g
+    plan: free
     region: oregon
     dockerfilePath: ./Dockerfile
     dockerContext: .
     autoDeploy: true
-    disk:
-      name: whatsapp-session-data
-      mountPath: /app/session
-      sizeGB: 1
+    healthCheckPath: /health
     envVars:
       - key: BOT_TOKEN
         sync: false
