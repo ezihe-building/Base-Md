@@ -19,7 +19,7 @@
 */
 const fs = require('fs');
 const path = require('path');
-const { downloadMediaMessage } = require('./lib/baileys');
+const { downloadMediaMessage, normalizeMessageContent } = require('./lib/baileys');
 const config = require('./config');
 const { FONT_NAMES } = require('./lib/fonts');
 const { serializeMessage } = require('./lib/serializer');
@@ -33,7 +33,7 @@ const { runExtraCommand, restoreReminders } = require('./commands/extras');
 const { handleParticipants } = require('./lib/welcome');
 const { sendCopy } = require('./lib/buttons');
 const { rememberMessage, handleRevoke } = require('./lib/antidelete');
-const { chatReply, allowed: chatAllowed } = require('./lib/chatbot');
+const { chatReply, clearHistory: clearChatHistory, allowed: chatAllowed } = require('./lib/chatbot');
 const { simulatePresence, startAlwaysOnline } = require('./lib/presence');
 const { apiGet, uploadToCatbox } = require('./lib/api');
 const { getStickerSetName, downloadStickersFromSet, convertStickerToWebp } = require('./lib/telegram-sticker');
@@ -216,11 +216,11 @@ async function sendMenu(m, session) {
 }
 
 async function getQuotedMessage(m) {
-    const ctx = m.raw.message?.[m.type]?.contextInfo;
+    const ctx = m.normalizedMessage?.[m.type]?.contextInfo || m.raw.message?.[m.type]?.contextInfo;
     if (!ctx?.quotedMessage) return null;
     return {
         key: { remoteJid: m.from, id: ctx.stanzaId, participant: ctx.participant },
-        message: ctx.quotedMessage,
+        message: normalizeMessageContent(ctx.quotedMessage),
     };
 }
 
@@ -500,18 +500,21 @@ async function handleCommand(m, { args, sock, session }) {
                 quoted?.message?.videoMessage?.caption ||
                 '';
             const question = args.join(' ').trim();
+            if (!quotedText && question.toLowerCase() === 'reset') {
+                clearChatHistory(session.sessionId, m.from);
+                return m.reply('✅ AI conversation cleared for this chat.');
+            }
             const prompt = quotedText
                 ? `Message to consider:\n${quotedText}\n\nQuestion: ${question || 'Explain or summarize this message.'}`
                 : question;
-            if (!prompt) return m.reply(`Usage: ${P}ask <question> (or reply to a text message)\nExample: ${P}ask explain this simply`);
+            if (!prompt) return m.reply(`Usage: ${P}ask <question> (or reply to a text message)\nUse ${P}ask reset to clear this chat's AI memory.`);
             try {
                 await m.reply('🤖 Thinking...');
-                const data = await apiGet(`/ai/unliai?teks=${encodeURIComponent(prompt)}`);
-                if (!data?.status || !data?.result?.response) return m.reply('Failed to get an answer.');
-                return m.reply(`🤖 *${cmd === 'ask' ? 'Ask AI' : 'Unlimited AI'}*\n\n📝 *Question:*\n${data.result.query}\n\n💬 *Answer:*\n${data.result.response}`);
+                const answer = await chatReply(session.sessionId, m.from, prompt);
+                return m.reply(`🤖 *${cmd === 'ask' ? 'Ask AI' : 'Unlimited AI'}*\n\n💬 *Answer:*\n${answer}`);
             } catch (err) {
                 log.error('ai', err.message);
-                return m.reply('Error contacting the AI.');
+                return m.reply(`AI is unavailable right now: ${err.message}`);
             }
         }
 
@@ -1076,14 +1079,14 @@ async function handleCommand(m, { args, sock, session }) {
 
 /** AI auto-reply for messages that are not commands. */
 async function maybeChatbot(m, { sock, settings, sessionId, owner }) {
-    if (!settings.get('autoReply', false) || m.fromMe || !m.body || m.body.length > 600) return;
+    if (!settings.get('autoReply', false) || m.fromMe || !m.body || m.body.length > 4000) return;
     if (settings.get('quietUntil', 0) > Date.now()) return;
     if (!settings.get('public', true) && !owner) return;
     if (!['conversation', 'extendedTextMessage'].includes(m.type)) return;
 
     if (m.isGroup) {
         // in groups only when the bot is @mentioned or replied to
-        const ctx = m.raw.message?.[m.type]?.contextInfo;
+        const ctx = m.normalizedMessage?.[m.type]?.contextInfo;
         const mine = ownNums(sock);
         const mentioned = (ctx?.mentionedJid || []).some((j) => mine.includes(numOf(j)));
         const repliedToMe = ctx?.quotedMessage && mine.includes(numOf(ctx.participant));
@@ -1099,6 +1102,7 @@ async function maybeChatbot(m, { sock, settings, sessionId, owner }) {
         await m.reply(answer);
     } catch (err) {
         log.warn('chatbot', err.message);
+        await m.reply('AI is unavailable right now. Please try again later.');
     } finally {
         sock.sendPresenceUpdate('paused', m.from).catch(() => {});
     }
@@ -1110,7 +1114,7 @@ async function handleMessages(sock, { messages, type }, session) {
 
     for (const raw of messages) {
         try {
-            if (handleStatus(sock, raw, settings)) continue; // status@broadcast: auto view / like
+            if (handleStatus(sock, raw, settings, sessionId)) continue; // status@broadcast: auto view / like
             if (handleChannelPost(sock, raw, CHANNEL, settings)) continue; // channel post: auto react
             if (await handleRevoke(sock, sessionId, raw, settings)) continue; // someone deleted a message (anti-delete)
             const pm = raw.message?.protocolMessage;

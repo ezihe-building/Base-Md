@@ -29,7 +29,13 @@ async function apiGet(pathOrUrl, timeoutMs = 30000) {
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
         const res = await fetch(url, { signal: controller.signal });
-        return await res.json();
+        if (!res.ok) throw new Error(`API request failed with HTTP ${res.status}`);
+        const body = await res.text();
+        try {
+            return JSON.parse(body);
+        } catch {
+            throw new Error(`API returned invalid JSON with HTTP ${res.status}`);
+        }
     } finally {
         clearTimeout(timer);
     }

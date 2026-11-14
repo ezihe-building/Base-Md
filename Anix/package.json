@@ -7,7 +7,8 @@
   "scripts": {
     "start": "node telegram-bot/index.js",
     "dev": "nodemon src/index.js",
-    "vf": "node vf.js"
+    "vf": "node vf.js",
+    "test": "node --test"
   },
   "dependencies": {
     "@boobablopars/tgs-to": "^2.1.0",

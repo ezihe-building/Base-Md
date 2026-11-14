@@ -25,11 +25,13 @@ Edit `.env` and set `BOT_TOKEN` and `OWNER_TELEGRAM_ID`. Keep `.env` private; it
 npm start
 ```
 
+Run the focused automated tests with `npm test`.
+
 Open the Telegram bot and use `/pair` to link a WhatsApp number. Existing paired sessions saved in `session/` are restored automatically. Keep that directory private and backed up; it contains WhatsApp login credentials.
 
 In WhatsApp, `.tgsticker <Telegram pack link> [number to send]` sends stickers from a public Telegram sticker pack, starting at the first sticker. It sends one by default and accepts up to 30 per command (for example, `.tgsticker https://t.me/addstickers/PackName 30`). Static, animated TGS, and video WebM stickers are supported; animated formats are converted to WebP. Animated TGS conversion requires Chromium's Linux runtime libraries to be available on the host.
 
-`.ask <question>` asks the existing AI service a question. You can also reply to a text message with `.ask` to ask about that text. `.menu` uses the bundled `assets/menu.mp4` in both WhatsApp and Telegram while keeping the existing command buttons. `.vv2` sends replied-to view-once media to the command user's private chat; `.vv` keeps its existing behavior and replies in the current chat.
+`.ask <question>` and `.ai <question>` share recent conversation context in each chat; reply to a text message with either command to ask about it, and use `.ask reset` to clear that chat's in-memory AI history. The AI service receives the prompt and recent context over the network; history is not saved to disk and resets when the process restarts. `.autoreply on` enables conversational AI replies (DMs, and groups only when mentioned or replied to). Status views and reactions run as soon as a new status event arrives, in parallel, using the configured `.statusemoji` list; delivery timing and visibility still depend on WhatsApp connectivity and privacy/read-receipt settings. `.menu` uses the bundled `assets/menu.mp4` in both WhatsApp and Telegram while keeping the existing command buttons. `.vv2` sends replied-to view-once media to the command user's private chat; `.vv` keeps its existing behavior and replies in the current chat.
 
 The menu also includes utility, game, and group commands: `.calc (12 + 8) * 3`, `.roll 2d6`, `.choose tea | coffee`, `.rps rock`, `.guess`, `.trivia`, `.poll question | option 1 | option 2`, `.remind 30m call mum`, `.reminders`, `.cancelreminder <id>`, `.weather <city>`, `.translate <language code> <text>`, `.qr <text>`, and `.sticker` (reply to a photo or short video). Reminders are saved with each WhatsApp session and restored after reconnecting. QR codes are generated locally; weather and translation use public online services. `.getpfp` is an alias for `.getdp`, and `.checkdevice` reports only the bot's own linked-session diagnostics.
 

@@ -17,7 +17,7 @@
 ║  © 2026 JAMESMODZ — ALL RIGHTS RESERVED 
 ╚════════════════════════╝
 */
-const { getContentType } = require('./baileys');
+const { getContentType, normalizeMessageContent } = require('./baileys');
 const { applyFont } = require('./fonts');
 
 function paymentContext(jid) {
@@ -44,7 +44,8 @@ function paymentContext(jid) {
 function serializeMessage(sock, msg, sessionSettings) {
     if (!msg.message) return null;
 
-    const type = getContentType(msg.message);
+    const normalizedMessage = normalizeMessageContent(msg.message);
+    const type = getContentType(normalizedMessage);
     const from = msg.key.remoteJid;
     const isGroup = from?.endsWith('@g.us');
     const sender = isGroup ? msg.key.participant : from;
@@ -53,22 +54,22 @@ function serializeMessage(sock, msg, sessionSettings) {
     const senderAlt = isGroup ? msg.key.participantAlt || msg.key.participantPn : msg.key.remoteJidAlt || msg.key.senderPn;
 
     let body = '';
-    if (type === 'conversation') body = msg.message.conversation;
-    else if (type === 'extendedTextMessage') body = msg.message.extendedTextMessage.text;
-    else if (type === 'imageMessage') body = msg.message.imageMessage.caption || '';
-    else if (type === 'videoMessage') body = msg.message.videoMessage.caption || '';
+    if (type === 'conversation') body = normalizedMessage.conversation;
+    else if (type === 'extendedTextMessage') body = normalizedMessage.extendedTextMessage.text;
+    else if (type === 'imageMessage') body = normalizedMessage.imageMessage.caption || '';
+    else if (type === 'videoMessage') body = normalizedMessage.videoMessage.caption || '';
     else if (type === 'interactiveResponseMessage') {
         // A tapped row/button from a native-flow menu: the row id IS the command text.
-        const resp = msg.message.interactiveResponseMessage;
+        const resp = normalizedMessage.interactiveResponseMessage;
         try {
             body = JSON.parse(resp.nativeFlowResponseMessage?.paramsJson || '{}').id || '';
         } catch {
             body = '';
         }
     } else if (type === 'listResponseMessage') {
-        body = msg.message.listResponseMessage.singleSelectReply?.selectedRowId || '';
+        body = normalizedMessage.listResponseMessage.singleSelectReply?.selectedRowId || '';
     } else if (type === 'buttonsResponseMessage') {
-        body = msg.message.buttonsResponseMessage.selectedButtonId || '';
+        body = normalizedMessage.buttonsResponseMessage.selectedButtonId || '';
     }
 
     return {
@@ -82,6 +83,7 @@ function serializeMessage(sock, msg, sessionSettings) {
         senderAlt,
         fromMe,
         type,
+        normalizedMessage,
         body: (body || '').trim(),
         pushName: msg.pushName || 'Unknown',
 
